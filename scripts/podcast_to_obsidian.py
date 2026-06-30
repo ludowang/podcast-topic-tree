@@ -32,6 +32,8 @@ DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 DOUBAO_SUBMIT_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"
 DOUBAO_QUERY_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query"
 DEFAULT_DOUBAO_RESOURCE_ID = "volc.seedasr.auc"
+GPT_IMAGE_BASE_URL = "https://dragoncode.codes/gpt-image/v1"
+GPT_IMAGE_MODEL = "gpt-image-2"
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
@@ -65,6 +67,13 @@ class VisualSpec:
     why_draw: str
     core_relationship: str
     prompt_seed: Dict[str, Any]
+
+
+@dataclass
+class GeneratedVisual:
+    rel_path: str
+    caption: str
+    abs_path: Path
 
 
 def log(message: str) -> None:
@@ -813,7 +822,7 @@ def build_topic_tree(cleaned_text: str, model: str, chunk_chars: int) -> str:
 
     partial_trees = []
     for index, chunk in enumerate(chunks, 1):
-        log(f"DeepSeek 生成局部话题树 {index}/{len(chunks)}")
+        log(f"DeepSeek 生成局部层级全文结构 {index}/{len(chunks)}")
         partial_trees.append(topic_tree_for_chunk(chunk, model, final=False))
 
     return merge_topic_trees(partial_trees, model, chunk_chars)
@@ -828,7 +837,7 @@ def topic_tree_for_chunk(text: str, model: str, final: bool) -> str:
             {
                 "role": "user",
                 "content": (
-                    f"请把以下播客{scope}重组成 Markdown 嵌套话题树。\n\n"
+                    f"请把以下播客{scope}重组成 Markdown 嵌套层级全文结构。\n\n"
                     "要求：只输出嵌套列表，不要 frontmatter，不要代码块。\n\n"
                     f"{text}"
                 ),
@@ -842,7 +851,7 @@ def topic_tree_for_chunk(text: str, model: str, final: bool) -> str:
 
 def topic_tree_system_prompt() -> str:
     return (
-        "你是播客内容结构化专家。播客是线性的，但内容是树状的；你的任务是把被压平的话题树重新立起来。\n"
+        "你是播客内容结构化专家。播客是线性的，但内容是树状的；你的任务是把被压平的内容逻辑重新立起来。\n"
         "输出格式必须是 Markdown 嵌套列表，使用 Tab 缩进表达层级，适配 Obsidian 原生折叠。全篇使用简体中文和书面表达。\n"
         "每个节点格式：'- **一句话标题**\\n\\t正文...'；标题加粗在前，正文另起一行。\n"
         "依附判断规则：B 是 A 的展开、举例、论证或细化，B 作 A 的子节点；"
@@ -862,7 +871,7 @@ def merge_topic_trees(trees: List[str], model: str, chunk_chars: int) -> str:
         batches = batch_texts(current, chunk_chars)
         merged: List[str] = []
         for index, batch in enumerate(batches, 1):
-            log(f"DeepSeek 合并话题树 round {round_no} batch {index}/{len(batches)}")
+            log(f"DeepSeek 合并层级全文结构 round {round_no} batch {index}/{len(batches)}")
             merged.append(merge_topic_tree_batch(batch, model))
         if len(merged) == len(current):
             return merge_topic_tree_batch(current, model)
@@ -890,15 +899,15 @@ def batch_texts(texts: List[str], max_chars: int) -> List[List[str]]:
 
 
 def merge_topic_tree_batch(trees: List[str], model: str) -> str:
-    system = topic_tree_system_prompt() + "\n你现在要合并多个局部话题树，消除重复节点，把绕回的话题合并回原节点。"
-    joined = "\n\n--- 局部话题树分隔 ---\n\n".join(trees)
+    system = topic_tree_system_prompt() + "\n你现在要合并多个局部层级全文结构，消除重复节点，把绕回的话题合并回原节点。"
+    joined = "\n\n--- 局部层级全文结构分隔 ---\n\n".join(trees)
     return deepseek_chat(
         [
             {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": (
-                    "请把以下多个局部话题树合并成一棵全局话题树。"
+                    "请把以下多个局部层级全文结构合并成一个全局层级全文结构。"
                     "只输出 Markdown 嵌套列表，不要 frontmatter，不要代码块。\n\n"
                     f"{joined}"
                 ),
@@ -1167,7 +1176,7 @@ def generate_title(tree_markdown: str, fallback: Optional[str], model: str) -> s
             {"role": "system", "content": "你是中文文件标题生成器。输出一句话标题，12到28个中文字符，不能含标点解释。"},
             {
                 "role": "user",
-                "content": f"根据以下播客话题树生成一个适合作为 Obsidian 文件名的标题。参考原标题：{fallback or '无'}\n\n{sample}",
+                "content": f"根据以下播客层级结构生成一个适合作为 Obsidian 文件名的标题。参考原标题：{fallback or '无'}\n\n{sample}",
             },
         ],
         model=model,
@@ -1192,7 +1201,7 @@ def generate_note_metadata(
     user = (
         "请生成 JSON，字段如下：\n"
         "- title: 12到28个中文字符，适合作为文件名，不要标点解释。\n"
-        "- tags: 3到6个粗粒度内容标签，不要写播客、逐字稿、话题树、音频、笔记等流程标签；不要太细。\n"
+        "- tags: 3到6个粗粒度内容标签，不要写播客、逐字稿、层级全文、音频、笔记等流程标签；不要太细。\n"
         "- questions: 3到5个这篇内容试图回答的阅读问题，引导读者进入文章；不要提出材料没有回答的问题。\n"
         "- core_points: 4到6条核心观点，必须是判断句，帮助读者快速抓住文章立场；只能基于材料，不要加入新事实。\n"
         "- quotes: 3到6条原文金句，必须从材料中抽取或做极轻微清理，不能自己总结成漂亮话，不能补写原文没有的句子；保留原意和原文表达质感。\n"
@@ -1252,7 +1261,7 @@ def parse_json_object(raw: str) -> Dict[str, Any]:
 def sanitize_tags(values: Any) -> List[str]:
     if not isinstance(values, list):
         return []
-    blocked = {"播客", "逐字稿", "话题树", "音频", "笔记", "小宇宙"}
+    blocked = {"播客", "逐字稿", "话题树", "层级全文", "音频", "笔记", "小宇宙"}
     tags: List[str] = []
     for value in values:
         tag = re.sub(r"[#\[\]\n\r\t,，/\\]+", " ", str(value)).strip()
@@ -1325,7 +1334,7 @@ def generate_visual_briefs(article_body: str, model: Optional[str], max_visuals:
         "配图必须严格基于整理稿明说的关系，不能补充、推断或可视化整理稿没有讲的因果链。"
     )
     user = (
-        f"请从整理稿中筛选最多 {max_visuals} 个值得画成小黑手绘解释图的复杂结构。\n\n"
+        f"请从整理稿中筛选最多 {max_visuals} 个值得画成结构说明图或小黑解释图的复杂结构。\n\n"
         "准入标准：能解释复杂结构；能降低理解门槛；能把文字里的关系画出来；"
         "能帮读者在 3 秒内抓住一个框架。不满足就不要输出。\n\n"
         "适合类型：organization_structure（组织结构）、ledger_formula（LTV/ROI账本）、"
@@ -1375,6 +1384,222 @@ def generate_visual_briefs(article_body: str, model: Optional[str], max_visuals:
                     )
                 )
     return specs
+
+
+def generate_opening_visual_brief(
+    article_body: str,
+    metadata: NoteMetadata,
+    model: Optional[str],
+) -> Optional[VisualSpec]:
+    sample = article_body[:10000]
+    system = (
+        "你是中文长文开头配图策划。只在配图能概括全文核心问题、帮助读者进入文章时输出 brief。"
+        "只输出 JSON，不要代码块。不能补充原文没有的信息。"
+    )
+    user = (
+        "请判断这篇整理稿是否适合生成一张开头图。开头图不是装饰，必须覆盖全文核心问题，"
+        "不能只表达第一部分，也不能只是“本期讲了什么”。如果不适合，输出 {\"visual\": null}。\n\n"
+        "如果适合，输出 JSON：visual 对象包含 kind=opening、title、why_draw、core_relationship、prompt_seed。"
+        "prompt_seed 包含 theme、core_idea、composition、suggested_elements、labels。"
+        "画面应是一个清晰隐喻或解释场景，元素少、关系明确，不要加入整理稿没有的概念。\n\n"
+        f"标题：{metadata.title}\n"
+        f"核心观点：{'；'.join(metadata.core_points[:5])}\n\n"
+        f"整理稿：\n{sample}"
+    )
+    raw = deepseek_chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        model=model,
+        temperature=0.15,
+        max_tokens=2048,
+    )
+    data = parse_json_object(raw)
+    item = data.get("visual") if isinstance(data, dict) else None
+    if not isinstance(item, dict):
+        return None
+    title = re.sub(r"\s+", "", str(item.get("title") or ""))[:24]
+    why_draw = re.sub(r"\s+", " ", str(item.get("why_draw") or "")).strip()
+    core_relationship = re.sub(r"\s+", " ", str(item.get("core_relationship") or "")).strip()
+    prompt_seed = item.get("prompt_seed") if isinstance(item.get("prompt_seed"), dict) else {}
+    if not title or not why_draw or not core_relationship or not prompt_seed:
+        return None
+    return VisualSpec(
+        kind="opening",
+        title=title,
+        why_draw=why_draw,
+        core_relationship=core_relationship,
+        prompt_seed=prompt_seed,
+    )
+
+
+def make_visual_prompt(spec: VisualSpec) -> str:
+    seed = spec.prompt_seed
+    labels = seed.get("labels", [])
+    if isinstance(labels, list):
+        label_text = "；".join(str(item) for item in labels[:8])
+    else:
+        label_text = str(labels)
+    elements = seed.get("suggested_elements", [])
+    if isinstance(elements, list):
+        element_text = "；".join(str(item) for item in elements[:8])
+    else:
+        element_text = str(elements)
+
+    if spec.kind == "opening":
+        return (
+            "生成一张 16:9 中文文章开头配图，白底、干净、手绘感，小黑风格但不要恐怖、不要幼稚。"
+            "画面用于吸引读者进入一篇商业分析文章，同时解释全文核心问题。"
+            "只保留少量中文标签，标签必须清晰可读，不要写读图说明、不要写“原文说法”。"
+            "不要堆砌物品，不要装饰性元素。"
+            f"主题：{seed.get('theme', spec.title)}。"
+            f"核心关系：{spec.core_relationship}。"
+            f"构图：{seed.get('composition', '')}。"
+            f"可用元素：{element_text}。"
+            f"允许出现的标签：{label_text}。"
+        )
+
+    return (
+        "请生成一张专业中文商业信息图，用于深度商业分析文章正文。"
+        "风格：白色背景、扁平现代、咨询报告质感、分区清晰、留白充足。"
+        "只用 2-3 个克制主色系，浅色卡片背景、深色标题文字；使用极简线性图标。"
+        "禁止渐变、阴影、发光、3D、玻璃拟态、装饰色块、乱码和无意义图标。"
+        "不要写读图说明，不要加入未提供的数字、因果或结论。"
+        "中文文字必须少而准，宁可少字，也不能错字、漏括号或挤出边界。"
+        f"图表标题：{spec.title}。"
+        f"要解释的关系：{spec.core_relationship}。"
+        f"为什么需要画：{spec.why_draw}。"
+        f"结构类型：{spec.kind}。"
+        f"构图要求：{seed.get('composition', '')}。"
+        f"可用元素：{element_text}。"
+        f"允许出现的标签：{label_text}。"
+    )
+
+
+def load_image_config() -> Dict[str, Any]:
+    api_key = env_first("GPT_IMAGE_API_KEY", "GPT_IMAGE2_API_KEY", "OPENAI_IMAGE_API_KEY", "IMAGE_API_KEY", "api_key")
+    if not api_key:
+        return {}
+    return {
+        "api_key": api_key,
+        "base_url": os.environ.get("GPT_IMAGE_BASE_URL", GPT_IMAGE_BASE_URL).rstrip("/"),
+        "model": os.environ.get("GPT_IMAGE_MODEL", GPT_IMAGE_MODEL),
+        "size": os.environ.get("GPT_IMAGE_SIZE", "16:9"),
+        "resolution": os.environ.get("GPT_IMAGE_RESOLUTION", "1k"),
+        "poll_interval": int(os.environ.get("GPT_IMAGE_POLL_INTERVAL", "5")),
+        "timeout": int(os.environ.get("GPT_IMAGE_TIMEOUT", "600")),
+    }
+
+
+def submit_gpt_image(prompt: str, cfg: Dict[str, Any]) -> str:
+    url = f"{cfg['base_url']}/images/generations"
+    headers = {"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"}
+    payload = {
+        "model": cfg["model"],
+        "prompt": prompt,
+        "n": 1,
+        "size": cfg["size"],
+        "resolution": cfg["resolution"],
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    if not resp.ok:
+        raise RuntimeError(f"GPT-Image submit 失败：HTTP {resp.status_code} {resp.text[:500]}")
+    data = resp.json()
+    try:
+        return data["data"][0]["task_id"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"GPT-Image submit 返回格式异常：{redact_json(data)}") from exc
+
+
+def poll_gpt_image(task_id: str, cfg: Dict[str, Any]) -> str:
+    url = f"{cfg['base_url']}/tasks/{task_id}"
+    headers = {"Authorization": f"Bearer {cfg['api_key']}"}
+    deadline = time.time() + cfg["timeout"]
+    while time.time() < deadline:
+        resp = requests.get(url, headers=headers, timeout=60)
+        if not resp.ok:
+            raise RuntimeError(f"GPT-Image query 失败：HTTP {resp.status_code} {resp.text[:500]}")
+        payload = resp.json()
+        data = payload.get("data", {})
+        status = data.get("status")
+        if status == "completed":
+            try:
+                return data["result"]["images"][0]["url"][0]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError(f"GPT-Image completed 返回格式异常：{redact_json(payload)}") from exc
+        if status == "failed":
+            error = data.get("error", {})
+            message = error.get("message") if isinstance(error, dict) else str(error)
+            raise RuntimeError(f"GPT-Image 任务失败：{message or 'unknown error'}")
+        time.sleep(cfg["poll_interval"])
+    raise RuntimeError("GPT-Image 任务超时。")
+
+
+def download_image(url: str, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with requests.get(url, stream=True, timeout=120) as resp:
+        resp.raise_for_status()
+        with tempfile.NamedTemporaryFile("wb", dir=str(output_path.parent), delete=False) as tmp:
+            for chunk in resp.iter_content(chunk_size=1024 * 256):
+                if chunk:
+                    tmp.write(chunk)
+            tmp_path = Path(tmp.name)
+    os.replace(tmp_path, output_path)
+
+
+def generate_visual_images(
+    article_body: str,
+    metadata: NoteMetadata,
+    output_path: Path,
+    model: Optional[str],
+    workdir: Path,
+    max_visuals: int = 4,
+) -> List[GeneratedVisual]:
+    cfg = load_image_config()
+    if not cfg:
+        log("未配置 GPT-Image API key，跳过 PNG 生成；仍会保留 visual_briefs.json。")
+        return []
+
+    specs: List[VisualSpec] = []
+    opening = generate_opening_visual_brief(article_body, metadata, model)
+    if opening:
+        specs.append(opening)
+    specs.extend(generate_visual_briefs(article_body, model, max_visuals=max_visuals))
+    (workdir / "visual_briefs.json").write_text(
+        json.dumps([spec.__dict__ for spec in specs], ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    if not specs:
+        log("没有通过准入标准的配图 brief，跳过 PNG 生成。")
+        return []
+
+    asset_dir = output_path.parent / "assets" / output_path.stem
+    generated: List[GeneratedVisual] = []
+    for index, spec in enumerate(specs, 1):
+        filename = f"{index:02d}-{safe_asset_name(spec.title)}.png"
+        image_path = asset_dir / filename
+        try:
+            log(f"生成配图 {index}/{len(specs)}：{spec.title}")
+            prompt = make_visual_prompt(spec)
+            (workdir / f"visual_prompt_{index:02d}.txt").write_text(prompt, encoding="utf-8")
+            task_id = submit_gpt_image(prompt, cfg)
+            image_url = poll_gpt_image(task_id, cfg)
+            download_image(image_url, image_path)
+            rel_path = image_path.relative_to(output_path.parent).as_posix()
+            generated.append(GeneratedVisual(rel_path=rel_path, caption=spec.title, abs_path=image_path))
+        except Exception as exc:
+            log(f"配图生成失败，已跳过「{spec.title}」：{exc}")
+    return generated
+
+
+def safe_asset_name(value: str) -> str:
+    name = sanitize_filename(value)
+    name = re.sub(r"\s+", "-", name)
+    return name[:48] or uuid.uuid4().hex[:8]
+
+
+def redact_json(value: Any) -> str:
+    text = json.dumps(value, ensure_ascii=False)
+    text = re.sub(r"(sk-[A-Za-z0-9_-]{8})[A-Za-z0-9_-]+", r"\1[REDACTED]", text)
+    return text[:1000]
 
 
 def sanitize_filename(value: str) -> str:
@@ -1449,6 +1674,38 @@ def build_markdown(
     return "\n".join(frontmatter) + article_body.strip() + "\n" + "\n".join(conclusion)
 
 
+def build_hierarchy_markdown(
+    source_url: str,
+    audio_url: Optional[str],
+    metadata: NoteMetadata,
+    hierarchy_body: str,
+    draft: bool = False,
+) -> str:
+    today = dt.date.today().isoformat()
+    frontmatter = [
+        "---",
+        f"source: {yaml_escape(source_url)}",
+        f"audio: {yaml_escape(audio_url or '')}",
+        f"date: {today}",
+        f"draft: {'true' if draft else 'false'}",
+        "version: 层级全文版",
+        "tags:",
+        *[f"  - {tag}" for tag in metadata.tags],
+        "---",
+        "",
+        f"# {metadata.title}｜层级全文版",
+        "",
+        "## 使用说明",
+        "",
+        "- 以下内容按逻辑关系重组为可折叠层级，不按对话时间线逐段排列。",
+        "- 子节点表示展开、举例、论证或细化；平级节点表示共同支撑上层观点。",
+        "",
+        "## 层级全文",
+        "",
+    ]
+    return "\n".join(frontmatter) + hierarchy_body.strip() + "\n"
+
+
 def atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=str(path.parent), delete=False) as tmp:
@@ -1489,7 +1746,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--doubao-poll-interval", type=int, default=10)
     parser.add_argument("--doubao-timeout", type=int, default=3600)
     parser.add_argument("--keep-tos-object", action="store_true", help="调试用：不删除上传到 TOS 的临时音频")
-    parser.add_argument("--visual-mode", choices=("none", "brief"), default="brief", help="brief=只生成配图 brief；none=不处理配图")
+    parser.add_argument(
+        "--visual-mode",
+        choices=("none", "brief", "auto"),
+        default="auto",
+        help="auto=生成 PNG 并插入 Markdown；brief=只生成配图 brief；none=不处理配图",
+    )
+    parser.add_argument(
+        "--output-version",
+        choices=("article", "hierarchy", "both"),
+        default="both",
+        help="article=只输出精读整理版；hierarchy=只输出层级全文版；both=两个版本都输出",
+    )
     parser.add_argument("--article-merge", choices=("merge", "concat"), default="merge", help="merge=全局合并去重；concat=长稿模式，串接局部整理以优先保留细节")
     parser.add_argument("--work-base", type=Path, help="中间文件目录；默认使用系统临时目录")
     parser.add_argument("--keep-workdir", action="store_true")
@@ -1619,29 +1887,61 @@ def main() -> None:
             cleaned = apply_replacements(cleaned, replacements)
             (workdir / "proofread.txt").write_text(cleaned, encoding="utf-8")
 
-        article_body = build_organized_article(
-            cleaned,
-            args.deepseek_model,
-            args.chunk_chars,
-            glossary=glossary,
-            merge_mode=args.article_merge,
-        )
-        article_body = apply_replacements(article_body, replacements)
-        (workdir / "organized_article.md").write_text(article_body, encoding="utf-8")
-
-        metadata = generate_note_metadata(cleaned, article_body, page_title, args.deepseek_model)
-        date_prefix = dt.date.today().isoformat()
-        output_path = args.vault.expanduser() / args.output_subdir / f"{date_prefix} {metadata.title}.md"
-        if args.visual_mode == "brief":
-            visual_specs = generate_visual_briefs(article_body, args.deepseek_model, max_visuals=4)
-            (workdir / "visual_briefs.json").write_text(
-                json.dumps([spec.__dict__ for spec in visual_specs], ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
+        article_body = ""
+        if args.output_version in {"article", "both"}:
+            article_body = build_organized_article(
+                cleaned,
+                args.deepseek_model,
+                args.chunk_chars,
+                glossary=glossary,
+                merge_mode=args.article_merge,
             )
-        markdown = build_markdown(source_url, audio_url, metadata, article_body, draft=draft)
-        atomic_write(output_path, markdown)
-        log(f"已写入 Obsidian：{output_path}")
-        print(output_path)
+            article_body = apply_replacements(article_body, replacements)
+            (workdir / "organized_article.md").write_text(article_body, encoding="utf-8")
+
+        hierarchy_body = ""
+        if args.output_version in {"hierarchy", "both"}:
+            hierarchy_body = build_topic_tree(cleaned, args.deepseek_model, args.chunk_chars)
+            hierarchy_body = apply_replacements(hierarchy_body, replacements)
+            (workdir / "hierarchy_full.md").write_text(hierarchy_body, encoding="utf-8")
+
+        metadata_source = article_body or hierarchy_body
+        metadata = generate_note_metadata(cleaned, metadata_source, page_title, args.deepseek_model)
+        date_prefix = dt.date.today().isoformat()
+        written_paths: List[Path] = []
+
+        if args.output_version in {"article", "both"}:
+            article_path = args.vault.expanduser() / args.output_subdir / f"{date_prefix} {metadata.title} 精读整理版.md"
+            markdown_visuals: List[Tuple[str, str]] = []
+            if args.visual_mode == "brief":
+                visual_specs = generate_visual_briefs(article_body, args.deepseek_model, max_visuals=4)
+                (workdir / "visual_briefs.json").write_text(
+                    json.dumps([spec.__dict__ for spec in visual_specs], ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            elif args.visual_mode == "auto":
+                generated_visuals = generate_visual_images(
+                    article_body,
+                    metadata,
+                    article_path,
+                    args.deepseek_model,
+                    workdir,
+                    max_visuals=4,
+                )
+                markdown_visuals = [(item.rel_path, item.caption) for item in generated_visuals]
+            markdown = build_markdown(source_url, audio_url, metadata, article_body, visuals=markdown_visuals, draft=draft)
+            atomic_write(article_path, markdown)
+            written_paths.append(article_path)
+
+        if args.output_version in {"hierarchy", "both"}:
+            hierarchy_path = args.vault.expanduser() / args.output_subdir / f"{date_prefix} {metadata.title} 层级全文版.md"
+            hierarchy_markdown = build_hierarchy_markdown(source_url, audio_url, metadata, hierarchy_body, draft=draft)
+            atomic_write(hierarchy_path, hierarchy_markdown)
+            written_paths.append(hierarchy_path)
+
+        for path in written_paths:
+            log(f"已写入 Obsidian：{path}")
+            print(path)
     finally:
         if args.keep_workdir:
             log(f"保留工作目录：{workdir}")

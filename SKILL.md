@@ -1,5 +1,5 @@
 ---
-name: podcast-topic-tree
+name: podcast-to-obsidian
 description: "Turn Xiaoyuzhou podcast links, direct audio URLs, local audio files, or existing transcripts into Obsidian notes with two Chinese outputs: 精读整理版 and 层级全文版. Use when the user wants podcast/video/audio content transcribed with Doubao ASR or Whisper fallback, cleaned and reorganized with DeepSeek, written atomically to Obsidian, with content-aware tags, article-like prose, optional Xiaohei/structure illustrations, and no hallucinated additions."
 ---
 
@@ -14,9 +14,9 @@ Convert long audio/video content into Obsidian notes:
 3. Use DeepSeek to clean, proofread, and reorganize.
 4. Produce two versions:
    - `精读整理版`: article-like, readable, moderately detailed.
-   - `层级全文版`: former topic-tree version, renamed for Obsidian folding and close reading.
+   - `层级全文版`: Tab-indented logical hierarchy for Obsidian folding and close reading.
 5. Write atomically to Obsidian.
-6. Add only useful images: opening Xiaohei illustration when it explains the whole article, and structure diagrams only when they clarify a complex relationship.
+6. Add only useful images: generate an opening illustration and structure diagrams only when they clarify a real relationship, save PNGs beside the note, and insert them into Markdown.
 
 Default output target:
 
@@ -44,7 +44,7 @@ Use the bundled script:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-pip install -r /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/requirements.txt
+pip install -r /Users/wangluda03/.codex/skills/podcast-to-obsidian/scripts/requirements.txt
 ```
 
 ## Main Commands
@@ -53,13 +53,16 @@ Xiaoyuzhou link, formal run:
 
 ```bash
 . .venv/bin/activate
-python /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/podcast_to_obsidian.py \
+python /Users/wangluda03/.codex/skills/podcast-to-obsidian/scripts/podcast_to_obsidian.py \
   "https://www.xiaoyuzhoufm.com/episode/..." \
   --env-file "/Users/wangluda03/Desktop/AI时代/蚩尤/podcast.env" \
   --env-file "/Users/wangluda03/Desktop/专家访谈/doubaoyuyin.env" \
   --env-file "/Users/wangluda03/Desktop/专家访谈/豆包TOS配置.env" \
+  --env-file "/Users/wangluda03/Desktop/AI时代/蚩尤/gpt_image2.env" \
   --asr doubao \
   --quality final \
+  --visual-mode auto \
+  --output-version both \
   --article-merge merge \
   --work-base .work \
   --keep-workdir
@@ -68,14 +71,17 @@ python /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/podcast_to_obs
 Manual audio URL fallback:
 
 ```bash
-python /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/podcast_to_obsidian.py \
+python /Users/wangluda03/.codex/skills/podcast-to-obsidian/scripts/podcast_to_obsidian.py \
   --audio-url "https://..." \
   --source-url "https://www.xiaoyuzhoufm.com/episode/..." \
   --env-file "/Users/wangluda03/Desktop/AI时代/蚩尤/podcast.env" \
   --env-file "/Users/wangluda03/Desktop/专家访谈/doubaoyuyin.env" \
   --env-file "/Users/wangluda03/Desktop/专家访谈/豆包TOS配置.env" \
+  --env-file "/Users/wangluda03/Desktop/AI时代/蚩尤/gpt_image2.env" \
   --asr doubao \
   --quality final \
+  --visual-mode auto \
+  --output-version both \
   --work-base .work \
   --keep-workdir
 ```
@@ -83,14 +89,17 @@ python /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/podcast_to_obs
 Local audio fallback:
 
 ```bash
-python /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/podcast_to_obsidian.py \
+python /Users/wangluda03/.codex/skills/podcast-to-obsidian/scripts/podcast_to_obsidian.py \
   --audio-file "/absolute/path/audio.m4a" \
   --source-url "https://source.example" \
   --env-file "/Users/wangluda03/Desktop/AI时代/蚩尤/podcast.env" \
   --env-file "/Users/wangluda03/Desktop/专家访谈/doubaoyuyin.env" \
   --env-file "/Users/wangluda03/Desktop/专家访谈/豆包TOS配置.env" \
+  --env-file "/Users/wangluda03/Desktop/AI时代/蚩尤/gpt_image2.env" \
   --asr doubao \
   --quality final \
+  --visual-mode auto \
+  --output-version both \
   --work-base .work \
   --keep-workdir
 ```
@@ -98,7 +107,7 @@ python /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/podcast_to_obs
 Existing transcript / debug mode:
 
 ```bash
-python /Users/wangluda03/.codex/skills/podcast-topic-tree/scripts/podcast_to_obsidian.py \
+python /Users/wangluda03/.codex/skills/podcast-to-obsidian/scripts/podcast_to_obsidian.py \
   --skip-whisper "/absolute/path/transcript.txt" \
   --source-url "https://source.example" \
   --env-file "/Users/wangluda03/Desktop/AI时代/蚩尤/podcast.env" \
@@ -126,7 +135,7 @@ The bundled script is strongest for Xiaoyuzhou/audio/local files. For YouTube:
 These are hard requirements, not style preferences.
 
 - Do not let opening metadata cover only the first section. `这篇内容在回答什么问题`, `核心观点`, `原文金句`, and `对照总结` must cover the whole episode.
-- Do not use generic tags such as `播客`, `逐字稿`, `话题树`. Generate topic tags such as company, industry, method, event, and theme. Keep tags broad, not overly granular.
+- Do not use generic tags such as `播客`, `逐字稿`, `层级全文`. Generate topic tags such as company, industry, method, event, and theme. Keep tags broad, not overly granular.
 - Do not force every article into a fixed framework such as “目的、机制、影响、案例、边界”. Infer the source's own structure first.
 - Do not hallucinate. Do not add outside facts unless the user explicitly asks for external research. If a point is inferred from the source, mark it as `嘉宾判断`, `材料中提到`, or similar.
 - Do not preserve transcript-like prose in the article body. Rewrite oral fragments into readable written Chinese while preserving details.
@@ -138,6 +147,16 @@ These are hard requirements, not style preferences.
 ## Image Rules
 
 Images are optional. Bad images are worse than no images.
+
+Default image mode is `--visual-mode auto`:
+
+- Generate visual briefs from the organized article.
+- Call GPT-Image through env-configured API credentials.
+- Download PNGs into `播客逐字稿/assets/<note-title>/`.
+- Insert Markdown image links into the note.
+- If the API key is missing or image generation fails, skip images without failing the whole note.
+
+Use `--visual-mode brief` when debugging image selection only. Use `--visual-mode none` when no image work is needed.
 
 Use `ian-xiaohei-illustrations` only when the image can explain the whole article or a real conceptual relationship. For structure-heavy diagrams, deterministic HTML/CSS/PNG or a clean infographic can be better than AI illustration.
 
