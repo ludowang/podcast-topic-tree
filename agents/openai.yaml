@@ -1,0 +1,4 @@
+interface:
+  display_name: "Podcast To Obsidian"
+  short_description: "Turn podcasts/audio into Obsidian 精读整理版 and 层级全文版"
+  default_prompt: "Use $podcast-topic-tree to turn this Xiaoyuzhou link, audio file, or transcript into Obsidian 精读整理版 and 层级全文版 notes."
