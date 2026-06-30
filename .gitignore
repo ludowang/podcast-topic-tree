@@ -1,0 +1,37 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.work/
+work/
+tmp/
+temp/
+*.log
+
+# Secrets and local configuration
+.env
+*.env
+*.env.*
+*.pem
+*.key
+*.p12
+*.mobileprovision
+id_rsa*
+id_ed25519*
+
+# Generated or user-private artifacts
+*.mp3
+*.m4a
+*.wav
+*.mp4
+*.flac
+*.ogg
+*.opus
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.json
+*.txt
+!scripts/requirements.txt
